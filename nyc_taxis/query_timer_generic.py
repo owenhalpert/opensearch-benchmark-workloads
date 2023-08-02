@@ -7,13 +7,6 @@ import matplotlib.pyplot as plt
 host = 'localhost'
 port = 9200
 auth = ('admin', 'admin')
-ca_certs_path = '/full/path/to/root-ca.pem' # Provide a CA bundle if you use intermediate CAs with your root CA.
-
-# Optional client certificates if you don't want to use HTTP basic authentication.
-# client_cert_path = '/full/path/to/client.pem'
-# client_key_path = '/full/path/to/client-key.pem'
-
-client = OpenSearch([{'host': host, 'port': port}])
 
 def send_query_and_measure_time():
     start_time = time.time()
@@ -22,7 +15,11 @@ def send_query_and_measure_time():
     query = query(workload, params, **kwargs)
 
     # Connect to the locally running OpenSearch domain
-    os = OpenSearch([{'host': 'localhost', 'port': 9200}])
+    os = OpenSearch([{
+                        'host': 'https://search-awskiran-cache20-1-a5kdfjbwk6rxqsna7cbznkserm.eu-west-1.es-staging.amazonaws.com',
+                        'port': 443,
+                        'use_ssl': True
+                    }])
 
     # Send the query to the OpenSearch domain
     response = os.search(index=query['index'], body=query['body'])
