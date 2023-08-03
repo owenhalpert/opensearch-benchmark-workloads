@@ -1,24 +1,20 @@
+import argparse
 import random
-from datetime import datetime, timedelta
-from opensearchpy import OpenSearch
 import time
+import requests
+from datetime import datetime
+from opensearchpy import OpenSearch
 import matplotlib.pyplot as plt
 
-endpoint = 'https://
-port = 443
-auth = ('admin', 'admin')
-
-client = OpenSearch([{'host': host, 'port': port}])
-
+# Define a function to generate random data
 def random_date(start, end):
-    return start + timedelta(
-        seconds=random.randint(0, int((end - start).total_seconds())),
-    )
+    delta = end - start
+    return start + delta * random.random()
 
-
-def expensive_1(workload, params, cache, **kwargs):
+# Expensive query to be used
+def expensive_1(cache, **kwargs):
     start = datetime(2015, 1, 1)
-    end = datetime(2016, 12, 31)
+    end = datetime(2015, 1, 1)
 
     pickup_gte = random_date(start, end)
     pickup_lte = random_date(pickup_gte, end)
@@ -39,16 +35,16 @@ def expensive_1(workload, params, cache, **kwargs):
                     {
                         "range": {
                             "pickup_datetime": {
-                                "gte": pickup_gte_str,
-                                "lte": pickup_lte_str
+                                "gte": '2015-01-01 00:00:00',
+                                "lte": '2015-01-03 00:00:00'
                             }
                         }
                     },
                     {
                         "range": {
                             "dropoff_datetime": {
-                                "gte": dropoff_gte_str,
-                                "lte": dropoff_lte_str
+                                "gte": '2015-01-01 00:00:00',
+                                "lte": '2015-01-03 00:00:00'
                             }
                         }
                     }
@@ -106,41 +102,106 @@ def expensive_1(workload, params, cache, **kwargs):
         "request-timeout": 60
     }
 
-def send_query_and_measure_time():
-    start_time = time.time()
+# Function to send the query and measure the response time
+def send_query_and_measure_time(hit_count, endpoint, username, password):
+
+    # start_time = time.time()
 
     # Assuming you have the 'expensive_1' function declared in the same file
-    query = expensive_1(workload, params, cache, **kwargs)
+    query = expensive_1(True)
 
-    # Connect to the locally running OpenSearch domain
-    os = OpenSearch([{'host': endpoint, 'port': 443, 'use_ssl': True}])
+    # Connect to the OpenSearch domain using the provided endpoint and credentials
+    os = OpenSearch(
+        [endpoint],
+        http_auth=(username, password),
+        port=443,
+        use_ssl=True,
+    )
 
     # Send the query to the OpenSearch domain
-    response = os.search(index=query['index'], body=query['body'])
+    response = os.search(index=query['index'], body=query['body'], request_timeout=60, request_cache=True)
+    took_time = response['took']
 
-    end_time = time.time()
-    response_time = end_time - start_time
+    # end_time = time.time()
+    # response_time = end_time - start_time
+    return took_time
 
-    return response_time
+def get_request_cache_stats(endpoint, username, password):
+    url = f"{endpoint}/_nodes/stats/indices/request_cache"
+    response = requests.get(url, auth=(username, password))
 
-# Number of times to execute the query and measure the response time
-num_queries = 100
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print("Failed to retrieve request cache stats.")
+        return None
 
-# List to store response times for each query
-response_times = []
+def main():
+    parser = argparse.ArgumentParser(description='OpenSearch Query Response Time Plotter')
+    parser.add_argument('endpoint', help='OpenSearch domain endpoint (https://example.com)')
+    parser.add_argument('username', help='Username for authentication')
+    parser.add_argument('password', help='Password for authentication')
+    args = parser.parse_args()
 
-# Execute the query multiple times and measure the response time
-for _ in range(num_queries):
-    response_time = send_query_and_measure_time()
-    response_times.append(response_time)
+    url = f"{args.endpoint}/nyc_taxis/_cache/clear"
+    response = requests.post(url, auth=(args.username, args.password))
 
-average_response_time = sum(response_times) / num_queries
+    if response.status_code == 200:
+        print("Request cache cleared successfully." + str(response))
+    else:
+        print("Failed to clear request cache." + str(response.status_code))
 
-# Plot the response times on a graph
-plt.plot(response_times)
-plt.axhline(y=average_response_time, color='r', linestyle='--', label='Average Response Time')
-plt.xlabel('Query Number')
-plt.ylabel('Response Time (seconds)')
-plt.title('OpenSearch Query Response Time')
-plt.legend()
-plt.show()
+    data = get_request_cache_stats(args.endpoint, args.username, args.password)
+    hit_count = data['nodes']['AdFlYDT8Q_GdaU04lXyB5A']['indices']['request_cache']['hit_count']
+
+    # Number of times to execute the query and measure the response time
+    num_queries = 100
+
+    # List to store response times for each query
+    response_times = []
+
+    # Execute the query multiple times and measure the response time
+    for x in range(1, num_queries + 1):
+        response_time = send_query_and_measure_time(hit_count, args.endpoint, args.username, args.password)
+        new_hits = get_request_cache_stats(args.endpoint, args.username, args.password)['nodes']['AdFlYDT8Q_GdaU04lXyB5A']['indices']['request_cache']['hit_count']
+        
+        if new_hits > hit_count:
+            print(f"Hit. Took time: {response_time}")
+            hit_count = new_hits
+            isHit = True
+        else:
+            isHit = False
+
+        # Append a tuple with response time and hit/miss status
+        response_times.append((response_time, isHit))
+        print(f"Response {x} received.")
+
+    # Separate response times and hit/miss indicators for plotting
+    hit_miss_colors = ['g' if isHit else 'r' for _, isHit in response_times][1:]
+
+    # Calculate the average response time
+    response_times = [response[0] for response in response_times][1:]
+    average_response_time = sum((response_times)) / (num_queries - 1)
+    print(response_times)
+
+    # Plot the response times on a graph
+    plt.scatter(range(1, num_queries), response_times, c=hit_miss_colors, label='Response Times')
+    plt.axhline(y=average_response_time, color='r', linestyle='--', label='Average Response Time')
+    plt.xlabel('Query Number')
+    plt.ylabel('Response Time (milliseconds)')
+    plt.title('OpenSearch Query Response Time')
+    plt.legend()
+
+    # Set x-axis ticks to prevent overlap
+    step = max(1, num_queries // 10)  # Display every 10th tick label
+    plt.xticks(range(1, num_queries + 1, step), rotation=45)
+
+    # Add a text annotation for the average response time
+    plt.text(num_queries + 0.25, average_response_time, f'Avg: {average_response_time:.2f} ms', color='r')
+
+    plt.tight_layout()  # Ensure labels and annotations fit within the figure
+
+    plt.show()
+
+if __name__ == '__main__':
+    main()
