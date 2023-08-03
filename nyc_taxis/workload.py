@@ -197,16 +197,16 @@ def expensive_1(workload, params, **kwargs):
                     {
                         "range": {
                             "pickup_datetime": {
-                                "gte": pickup_gte_str,
-                                "lte": pickup_lte_str
+                                "gte": '2015-01-01 00:00:00',
+                                "lte": '2015-01-03 00:00:00'
                             }
                         }
                     },
                     {
                         "range": {
                             "dropoff_datetime": {
-                                "gte": dropoff_gte_str,
-                                "lte": dropoff_lte_str
+                                "gte": '2015-01-01 00:00:00',
+                                "lte": '2015-01-03 00:00:00'
                             }
                         }
                     }
