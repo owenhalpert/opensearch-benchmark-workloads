@@ -13,19 +13,7 @@ def random_date(start, end):
     return start + delta * random.random()
 
 # Expensive query to be used
-def expensive_1(cache, **kwargs):
-    start = datetime(2015, 1, 1)
-    end = datetime(2015, 1, 1)
-
-    pickup_gte = random_date(start, end)
-    pickup_lte = random_date(pickup_gte, end)
-    dropoff_gte = random_date(start, end)
-    dropoff_lte = random_date(dropoff_gte, end)
-
-    pickup_gte_str = pickup_gte.strftime("%Y-%m-%d %H:%M:%S")
-    pickup_lte_str = pickup_lte.strftime("%Y-%m-%d %H:%M:%S")
-    dropoff_gte_str = dropoff_gte.strftime("%Y-%m-%d %H:%M:%S")
-    dropoff_lte_str = dropoff_lte.strftime("%Y-%m-%d %H:%M:%S")
+def expensive_1(day, cache, **kwargs):
 
     return {
         "body": {
@@ -37,7 +25,7 @@ def expensive_1(cache, **kwargs):
                         "range": {
                             "pickup_datetime": {
                                 "gte": '2015-01-01 00:00:00',
-                                "lte": '2015-01-03 00:00:00'
+                                "lte": f"2015-01-{day:02d} 11:59:59"
                             }
                         }
                     },
@@ -45,7 +33,7 @@ def expensive_1(cache, **kwargs):
                         "range": {
                             "dropoff_datetime": {
                                 "gte": '2015-01-01 00:00:00',
-                                "lte": '2015-01-03 00:00:00'
+                                "lte": f"2015-01-{day:02d} 11:59:59"
                             }
                         }
                     }
@@ -104,12 +92,12 @@ def expensive_1(cache, **kwargs):
     }
 
 # Function to send the query and measure the response time
-def send_query_and_measure_time(hit_count, endpoint, username, password):
+def send_query_and_measure_time(day, hit_count, endpoint, username, password):
 
     # start_time = time.time()
 
     # Assuming you have the 'expensive_1' function declared in the same file
-    query = expensive_1(False)
+    query = expensive_1(day, False)
 
     # Connect to the OpenSearch domain using the provided endpoint and credentials
     os = OpenSearch(
@@ -158,65 +146,73 @@ def main():
     # Number of times to execute the query and measure the response time
     num_queries = 5
 
-    # List to store response times for each query
-    response_times = []
-
     # Execute the query multiple times and measure the response time
-    for x in range(1, num_queries + 1):
-        response_time = send_query_and_measure_time(hit_count, args.endpoint, args.username, args.password)
-        new_hits = get_request_cache_stats(args.endpoint, args.username, args.password)['nodes']['AdFlYDT8Q_GdaU04lXyB5A']['indices']['request_cache']['hit_count']
+    for day in range(1, 32):
+        response_times = []
+        for x in range(1, num_queries + 1):
+            response_time = send_query_and_measure_time(day, hit_count, args.endpoint, args.username, args.password)
+            new_hits = get_request_cache_stats(args.endpoint, args.username, args.password)['nodes']['AdFlYDT8Q_GdaU04lXyB5A']['indices']['request_cache']['hit_count']
+            
+            if new_hits > hit_count:
+                print(f"Hit. Took time: {response_time}")
+                hit_count = new_hits
+                isHit = True
+            else:
+                print(f"Miss. Took time: {response_time}")
+                isHit = False
+
+            # Append a tuple with response time and hit/miss status
+            response_times.append((response_time, isHit))
+            print(f"Response {x} received.")
+
+        # Separate response times and hit/miss indicators for plotting
+        hit_miss_colors = ['g' if isHit else 'r' for _, isHit in response_times]
+
+        # Calculate the average response time. Add [1:] to response_times_only in line 186 and 188 if calculating for hits, to ignore first miss. 186 is / num_queries for misses, num_queries - 1 for hits.
+        response_times_only = [response[0] for response in response_times]
+        average_response_time = sum(response_times_only) / (num_queries)
+
+        p99_latency = np.percentile(response_times_only, 99)
+
+        # Plot the response times on a graph
+        plt.scatter(range(1, num_queries + 1), response_times_only, c=hit_miss_colors, label='Response Times')
+        plt.axhline(y=average_response_time, color='r', linestyle='--', label='Average Response Time')
+
+        # Find indices of highest hit and miss. Comment out line below if calculating misses. TODO: buggy
+        # highest_hit_index = max([i for i, (_, isHit) in enumerate(response_times) if isHit])
+        # highest_miss_index = max([i for i, (_, isHit) in enumerate(response_times) if not isHit])
+
+        # Draw lines at the highest hit and miss points
+        # plt.axvline(x=highest_hit_index + 1, color='g', linestyle=':', label='Highest Hit')
+        # plt.axvline(x=highest_miss_index + 1, color='r', linestyle=':', label='Highest Miss')
+
+        plt.yscale('log')  # Set log scale on y-axis
+
+        # Set x-axis ticks to prevent overlap
+        step = max(1, num_queries // 10)  # Display every 10th tick label
+        plt.xticks(range(1, num_queries + 1, step), rotation=45)
+
+        # Add a text annotation for the average and p99 response times
+        plt.text(num_queries + 0.5, average_response_time, f'Avg: {average_response_time:.2f} ms', color='r', va='center')
+        plt.text(num_queries + 0.5, p99_latency, f'p99: {p99_latency:.2f} ms', color='b', va='bottom')
+
+        plt.xlabel('Query Number')
+        plt.ylabel('Response Time (milliseconds)')
+        plt.title('OpenSearch Query Response Time from Jan 1 to Jan ' + str(day))
+        plt.legend()
+
+        plt.tight_layout()  # Ensure labels and annotations fit within the figure
         
-        if new_hits > hit_count:
-            print(f"Hit. Took time: {response_time}")
-            hit_count = new_hits
-            isHit = True
-        else:
-            print(f"Miss. Took time: {response_time}")
-            isHit = False
+        # Save the figure to the specified folder
+        save_path = '/home/ec2-user/opensearch-benchmark-workloads/nyc_taxis'
+        save_filename = 'response_time_plot_until_jan' + str(day) + '.png'  # You can change the filename if needed
+        save_full_path = f'{save_path}/{save_filename}'
+        figure = plt.gcf()
+        figure.savefig(save_full_path)
+        plt.close(figure)
+        plt.close()
+        print("file saved")
 
-        # Append a tuple with response time and hit/miss status
-        response_times.append((response_time, isHit))
-        print(f"Response {x} received.")
-
-    # Separate response times and hit/miss indicators for plotting
-    hit_miss_colors = ['g' if isHit else 'r' for _, isHit in response_times]
-
-    # Calculate the average response time. Add [1:] to response_times_only in line 186 and 188 if calculating for hits, to ignore first miss. 186 is / num_queries for misses, num_queries - 1 for hits.
-    response_times_only = [response[0] for response in response_times]
-    average_response_time = sum(response_times_only) / (num_queries)
-
-    p99_latency = np.percentile(response_times_only, 99)
-
-    # Plot the response times on a graph
-    plt.scatter(range(1, num_queries + 1), response_times_only, c=hit_miss_colors, label='Response Times')
-    plt.axhline(y=average_response_time, color='r', linestyle='--', label='Average Response Time')
-
-    # Find indices of highest hit and miss. Comment out line below if calculating misses. TODO: buggy
-    # highest_hit_index = max([i for i, (_, isHit) in enumerate(response_times) if isHit])
-    # highest_miss_index = max([i for i, (_, isHit) in enumerate(response_times) if not isHit])
-
-    # Draw lines at the highest hit and miss points
-    # plt.axvline(x=highest_hit_index + 1, color='g', linestyle=':', label='Highest Hit')
-    # plt.axvline(x=highest_miss_index + 1, color='r', linestyle=':', label='Highest Miss')
-
-    plt.yscale('log')  # Set log scale on y-axis
-
-    # Set x-axis ticks to prevent overlap
-    step = max(1, num_queries // 10)  # Display every 10th tick label
-    plt.xticks(range(1, num_queries + 1, step), rotation=45)
-
-    # Add a text annotation for the average and p99 response times
-    plt.text(num_queries + 0.5, average_response_time, f'Avg: {average_response_time:.2f} ms', color='r', va='center')
-    plt.text(num_queries + 0.5, p99_latency, f'p99: {p99_latency:.2f} ms', color='b', va='bottom')
-
-    plt.xlabel('Query Number')
-    plt.ylabel('Response Time (milliseconds)')
-    plt.title('OpenSearch Query Response Time')
-    plt.legend()
-
-    plt.tight_layout()  # Ensure labels and annotations fit within the figure
-
-    plt.show()
 
 if __name__ == '__main__':
     main()
