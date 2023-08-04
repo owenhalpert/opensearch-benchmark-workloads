@@ -144,7 +144,7 @@ def main():
     hit_count = data['nodes']['AdFlYDT8Q_GdaU04lXyB5A']['indices']['request_cache']['hit_count']
 
     # Number of times to execute the query and measure the response time
-    num_queries = 5
+    num_queries = 50
 
     # Execute the query multiple times and measure the response time
     for day in range(1, 32):
@@ -205,7 +205,7 @@ def main():
         
         # Save the figure to the specified folder
         save_path = '/home/ec2-user/opensearch-benchmark-workloads/nyc_taxis'
-        save_filename = 'response_time_plot_until_jan' + str(day) + '.png'  # You can change the filename if needed
+        save_filename = 'response_time_50iterations_plot_until_jan' + str(day) + '.png'  # You can change the filename if needed
         save_full_path = f'{save_path}/{save_filename}'
         figure = plt.gcf()
         figure.savefig(save_full_path)
