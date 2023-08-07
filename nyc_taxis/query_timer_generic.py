@@ -204,14 +204,15 @@ def main():
         plt.tight_layout()  # Ensure labels and annotations fit within the figure
         
         # Save the figure to the specified folder
-        save_path = '/home/ec2-user/opensearch-benchmark-workloads/nyc_taxis'
-        save_filename = 'response_time_50hits_plot_until_jan' + str(day) + '.png'  # You can change the filename if needed
+        save_path = '/home/ec2-user/opensearch-benchmark-workloads/nyc_taxis' # change this to image save path
+        save_filename = 'PoC_time_50hits_plot_until_jan' + str(day) + '.png'  # You can change the filename if needed
         save_full_path = f'{save_path}/{save_filename}'
         figure = plt.gcf()
         figure.savefig(save_full_path)
         plt.close(figure)
         plt.close()
-        print("file saved")
+        print("Average response time: ", average_response_time)
+        print("File saved to ", save_path)
 
 
 if __name__ == '__main__':
