@@ -147,7 +147,7 @@ def main():
     num_queries = 50
 
     # Execute the query multiple times and measure the response time
-    for day in range(1, 32):
+    for day in range(24, 32):
         response_times = []
         for x in range(1, num_queries + 1):
             response_time = send_query_and_measure_time(day, hit_count, args.endpoint, args.username, args.password)
