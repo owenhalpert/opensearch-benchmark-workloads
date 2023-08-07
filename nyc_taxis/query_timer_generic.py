@@ -97,7 +97,7 @@ def send_query_and_measure_time(day, hit_count, endpoint, username, password):
     # start_time = time.time()
 
     # Assuming you have the 'expensive_1' function declared in the same file
-    query = expensive_1(day, False)
+    query = expensive_1(day, True)
 
     # Connect to the OpenSearch domain using the provided endpoint and credentials
     os = OpenSearch(
@@ -108,7 +108,7 @@ def send_query_and_measure_time(day, hit_count, endpoint, username, password):
     )
 
     # Send the query to the OpenSearch domain
-    response = os.search(index=query['index'], body=query['body'], request_timeout=60, request_cache=False)
+    response = os.search(index=query['index'], body=query['body'], request_timeout=60, request_cache=True)
     took_time = response['took']
 
     # end_time = time.time()
@@ -170,9 +170,9 @@ def main():
 
         # Calculate the average response time. Add [1:] to response_times_only in line 186 and 188 if calculating for hits, to ignore first miss. 186 is / num_queries for misses, num_queries - 1 for hits.
         response_times_only = [response[0] for response in response_times]
-        average_response_time = sum(response_times_only) / (num_queries)
+        average_response_time = sum(response_times_only[1:]) / (num_queries - 1)
 
-        p99_latency = np.percentile(response_times_only, 99)
+        p99_latency = np.percentile(response_times_only[1:], 99)
 
         # Plot the response times on a graph
         plt.scatter(range(1, num_queries + 1), response_times_only, c=hit_miss_colors, label='Response Times')
